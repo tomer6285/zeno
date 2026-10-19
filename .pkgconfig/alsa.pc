@@ -1,0 +1,10 @@
+prefix=/usr
+exec_prefix=/usr
+libdir=/home/tomer/dev/zeno/.lib
+includedir=/usr/include
+
+Name: alsa
+Description: Advanced Linux Sound Architecture (ALSA) - Minimal pc for build
+Version: 1.2.15
+Libs: -L${libdir} -lasound
+Cflags: -I${includedir}

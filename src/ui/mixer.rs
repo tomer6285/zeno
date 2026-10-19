@@ -17,6 +17,7 @@ pub fn render_mixer(
     selected_index: usize,
     theme: &Theme,
     is_focused: bool,
+    is_fullscreen: bool,
 ) {
     let border_color = if is_focused {
         theme.border_active
@@ -24,12 +25,26 @@ pub fn render_mixer(
         theme.border
     };
 
+    let title_badge = if is_fullscreen {
+        " [FULLSCREEN - 'f' to exit]"
+    } else if is_focused {
+        " [FOCUSED]"
+    } else {
+        ""
+    };
+
+    let title_style = if is_focused {
+        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.text_muted)
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
         .title(Span::styled(
-            " 🎚 Soundscape Mixer ",
-            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+            format!(" 🎛 Soundscape Mixer{} ", title_badge),
+            title_style,
         ));
 
     let inner = block.inner(area);
@@ -177,15 +192,28 @@ pub fn render_mixer(
     }
 
     // 4. Footer Navigation Hint
-    let hint_spans = Line::from(vec![
-        Span::styled("[↑/↓] ", Style::default().fg(theme.primary)),
-        Span::raw("Select  "),
-        Span::styled("[Enter] ", Style::default().fg(theme.primary)),
-        Span::raw("Toggle  "),
-        Span::styled("[←/→] ", Style::default().fg(theme.primary)),
-        Span::raw("Volume  "),
-        Span::styled("[b] ", Style::default().fg(theme.primary)),
-        Span::raw("Binaural Hz"),
-    ]);
+    let hint_spans = if is_focused {
+        Line::from(vec![
+            Span::styled("[j/k] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::raw("Select  "),
+            Span::styled("[h/l] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::raw("Volume  "),
+            Span::styled("[Enter] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::raw("Toggle ON/OFF  "),
+            Span::styled("[b] ", Style::default().fg(theme.primary)),
+            Span::raw("Binaural Hz  "),
+            Span::styled("[f] ", Style::default().fg(theme.primary)),
+            Span::raw(if is_fullscreen { "Normal" } else { "Fullscreen" }),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("[Tab] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+            Span::raw("Focus Mixer  "),
+            Span::styled("[m] ", Style::default().fg(theme.text_muted)),
+            Span::raw("Mute  "),
+            Span::styled("[+/-] ", Style::default().fg(theme.text_muted)),
+            Span::raw("Master Vol"),
+        ])
+    };
     f.render_widget(Paragraph::new(hint_spans), chunks[3]);
 }

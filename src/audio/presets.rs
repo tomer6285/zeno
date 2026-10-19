@@ -28,6 +28,15 @@ impl VisualizerType {
             VisualizerType::Off => VisualizerType::Rain,
         }
     }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            VisualizerType::Rain => VisualizerType::Off,
+            VisualizerType::Fire => VisualizerType::Rain,
+            VisualizerType::Wave => VisualizerType::Fire,
+            VisualizerType::Off => VisualizerType::Wave,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

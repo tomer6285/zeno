@@ -21,12 +21,19 @@ impl TimerMode {
         }
     }
 
-    #[allow(dead_code)]
     pub fn next(&self) -> Self {
         match self {
             TimerMode::Pomodoro => TimerMode::Stopwatch,
             TimerMode::Stopwatch => TimerMode::Countdown,
             TimerMode::Countdown => TimerMode::Pomodoro,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            TimerMode::Pomodoro => TimerMode::Countdown,
+            TimerMode::Countdown => TimerMode::Stopwatch,
+            TimerMode::Stopwatch => TimerMode::Pomodoro,
         }
     }
 }
@@ -134,6 +141,34 @@ impl TimerManager {
         self.mode = mode;
     }
 
+    pub fn cycle_mode(&mut self) {
+        self.mode = self.mode.next();
+    }
+
+    pub fn prev_mode(&mut self) {
+        self.mode = self.mode.prev();
+    }
+
+    pub fn adjust_duration(&mut self, delta_mins: i64) {
+        match self.mode {
+            TimerMode::Pomodoro => {
+                let current_mins = (self.pomodoro.work_duration.as_secs() / 60) as i64;
+                let new_mins = (current_mins + delta_mins).clamp(1, 120) as u64;
+                self.pomodoro.work_duration = Duration::from_secs(new_mins * 60);
+                if self.pomodoro.phase == PomodoroPhase::Work && !self.pomodoro.is_running {
+                    self.pomodoro.total_duration = self.pomodoro.work_duration;
+                    self.pomodoro.time_remaining = self.pomodoro.work_duration;
+                }
+            }
+            TimerMode::Countdown => {
+                let current_mins = (self.countdown.total_duration.as_secs() / 60) as i64;
+                let new_mins = (current_mins + delta_mins).clamp(1, 180) as u64;
+                self.countdown.set_duration_mins(new_mins);
+            }
+            TimerMode::Stopwatch => {}
+        }
+    }
+
     pub fn toggle_run(&mut self) {
         match self.mode {
             TimerMode::Pomodoro => self.pomodoro.toggle_run(),
@@ -216,5 +251,22 @@ mod tests {
         let finished = tm.tick(Duration::from_secs(61));
         assert!(matches!(finished, Some(TimerAlert::CountdownFinished)));
         assert!(!tm.is_running());
+    }
+
+    #[test]
+    fn test_timer_manager_cycle_and_adjust() {
+        let mut tm = TimerManager::new();
+        assert_eq!(tm.mode, TimerMode::Pomodoro);
+        tm.cycle_mode();
+        assert_eq!(tm.mode, TimerMode::Stopwatch);
+        tm.cycle_mode();
+        assert_eq!(tm.mode, TimerMode::Countdown);
+        tm.cycle_mode();
+        assert_eq!(tm.mode, TimerMode::Pomodoro);
+        tm.prev_mode();
+        assert_eq!(tm.mode, TimerMode::Countdown);
+
+        tm.adjust_duration(5);
+        assert_eq!(tm.countdown.total_duration, Duration::from_secs(20 * 60));
     }
 }

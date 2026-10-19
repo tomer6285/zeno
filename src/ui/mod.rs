@@ -26,80 +26,24 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let root_block = Block::default().style(Style::default().bg(theme.background));
     f.render_widget(root_block, area);
 
-    // Main layout: Header (1 line), Body (Min), Footer (1 line)
+    // Main layout: Body (Min), Footer (1 line)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Top Header Bar
             Constraint::Min(10),   // Central Working Area
             Constraint::Length(1), // Bottom Status / Keybinding Footer
         ])
         .split(area);
 
-    // 1. Header Bar
-    let title_span = Span::styled(
-        " 🌿 ZENO ",
-        Style::default().fg(theme.primary).bg(theme.surface).add_modifier(Modifier::BOLD),
-    );
-
-    let preset_name = app
-        .audio
-        .active_preset_name
-        .as_deref()
-        .unwrap_or("Custom Mix");
-
-    let audio_badge = if !app.audio.engine.audio_available {
-        Span::styled("🔇 QUIET MODE", Style::default().fg(theme.warning))
-    } else if app.audio.engine.is_muted {
-        Span::styled("🔇 MUTED", Style::default().fg(theme.error).add_modifier(Modifier::BOLD))
-    } else {
-        let pct = (app.audio.engine.master_volume * 100.0).round() as u32;
-        Span::styled(format!("🔊 {}%", pct), Style::default().fg(theme.success))
-    };
-
-    let focus_color = match app.focus {
-        ActiveFocus::Timer => theme.primary,
-        ActiveFocus::Mixer => theme.secondary,
-        ActiveFocus::Visualizer => theme.accent,
-    };
-    let focus_badge = Span::styled(
-        format!(" [Focus: {}] ", app.focus.name()),
-        Style::default().fg(focus_color).bg(theme.surface).add_modifier(Modifier::BOLD),
-    );
-
-    let mut header_spans = vec![
-        title_span,
-        Span::raw("   "),
-        Span::styled(format!("Mix: {}", preset_name), Style::default().fg(theme.secondary)),
-        Span::raw("  │  "),
-        Span::styled(format!("Visual: {}", app.visual.mode.name()), Style::default().fg(theme.accent)),
-        Span::raw("  │  "),
-        Span::styled(format!("Theme: {}", theme.kind.name()), Style::default().fg(theme.primary)),
-        Span::raw("  │  "),
-        audio_badge,
-        Span::raw("   "),
-        focus_badge,
-    ];
-
-    if app.fullscreen {
-        header_spans.push(Span::raw(" "));
-        header_spans.push(Span::styled(
-            " ⛶ FULLSCREEN (f: exit) ",
-            Style::default().fg(theme.background).bg(theme.accent).add_modifier(Modifier::BOLD),
-        ));
-    }
-
-    f.render_widget(Paragraph::new(Line::from(header_spans)), chunks[0]);
-
-    // 2. Central Layout Split:
+    // Central Layout Split:
     // If fullscreen is toggled ON, render only the active focused module!
     if app.fullscreen {
         match app.focus {
             ActiveFocus::Timer => {
-                render_timer(f, chunks[1], &app.timer, theme, true, true);
+                render_timer(f, chunks[0], &app.timer, theme, true, true);
             }
             ActiveFocus::Mixer => {
-                render_mixer(f, chunks[1], &app.audio, app.mixer_selected_index, theme, true, true);
+                render_mixer(f, chunks[0], &app.audio, app.mixer_selected_index, theme, true, true);
             }
             ActiveFocus::Visualizer => {
                 let visual_block = Block::default()
@@ -109,8 +53,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         format!(" 🌌 Ambient Atmosphere ({}) [FULLSCREEN - 'f' to exit] ", app.visual.mode.name()),
                         Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
                     ));
-                let visual_inner = visual_block.inner(chunks[1]);
-                f.render_widget(visual_block, chunks[1]);
+                let visual_inner = visual_block.inner(chunks[0]);
+                f.render_widget(visual_block, chunks[0]);
                 app.visual.resize(visual_inner.width, visual_inner.height);
                 let visual_widget = app.visual.render(visual_inner, theme);
                 f.render_widget(visual_widget, visual_inner);
@@ -124,7 +68,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Constraint::Percentage(52), // Left Pane: Timer & Visualizer
                 Constraint::Percentage(48), // Right Pane: Soundscape Mixer
             ])
-            .split(chunks[1]);
+            .split(chunks[0]);
 
         // Left Pane vertical split: Timer (top) & Visualizer (bottom)
         let left_split = Layout::default()
@@ -189,7 +133,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         );
     }
 
-    // 3. Footer Bar with Dynamic Context-Aware Hotkey Hints
+    // Bottom Status / Keybinding Footer
     let mut footer_spans = Vec::new();
 
     // Active module focus-specific controls
@@ -233,9 +177,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
     footer_spans.push(Span::styled("[S] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)));
     footer_spans.push(Span::raw("Save  "));
 
-    footer_spans.push(Span::styled("[t] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)));
-    footer_spans.push(Span::raw("Theme  "));
-
     footer_spans.push(Span::styled("[m] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)));
     footer_spans.push(Span::raw("Mute  "));
 
@@ -249,10 +190,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Paragraph::new(Line::from(footer_spans))
             .style(Style::default().bg(theme.surface))
             .alignment(Alignment::Center),
-        chunks[2],
+        chunks[1],
     );
 
-    // 4. Modal Overlays
+    // Modal Overlays
     match &app.modal {
         ModalState::PresetBrowser { selected_index } => {
             render_preset_browser(f, area, &app.audio, *selected_index, theme);

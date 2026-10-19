@@ -3,12 +3,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::audio::presets::{Preset, VisualizerType};
-use crate::ui::theme::ThemeKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    #[serde(default = "default_theme")]
-    pub theme: ThemeKind,
     #[serde(default = "default_volume")]
     pub master_volume: f32,
     #[serde(default)]
@@ -27,9 +24,6 @@ pub struct AppConfig {
     pub presets: Vec<Preset>,
 }
 
-fn default_theme() -> ThemeKind {
-    ThemeKind::CatppuccinMocha
-}
 fn default_volume() -> f32 {
     0.8
 }
@@ -49,7 +43,6 @@ fn default_visualizer() -> VisualizerType {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            theme: default_theme(),
             master_volume: default_volume(),
             muted: false,
             work_duration_mins: default_work_mins(),

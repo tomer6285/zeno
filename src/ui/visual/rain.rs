@@ -565,7 +565,7 @@ impl RainSimulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::theme::{Theme, ThemeKind};
+    use crate::ui::theme::Theme;
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -581,7 +581,7 @@ mod tests {
 
         rain.tick_default();
 
-        let theme = Theme::new(ThemeKind::Nord);
+        let theme = Theme::default();
         let area = Rect::new(0, 0, 60, 15);
 
         let backend = TestBackend::new(60, 15);

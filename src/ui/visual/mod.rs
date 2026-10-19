@@ -44,7 +44,7 @@ impl VisualCoordinator {
 
     pub fn tick(&mut self, spectrum_energy: &[f32; 16]) {
         match self.mode {
-            VisualizerType::Rain => self.rain.tick(),
+            VisualizerType::Rain => self.rain.tick(spectrum_energy),
             VisualizerType::Fire => self.fire.tick(),
             VisualizerType::Wave => self.wave.tick(spectrum_energy),
             VisualizerType::Off => {}

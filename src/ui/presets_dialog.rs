@@ -301,7 +301,6 @@ pub fn render_help_modal(
         ("b", "Cycle binaural beats frequency (Alpha 10Hz / Beta 14Hz / Gamma 40Hz)"),
         ("m", "Mute / Unmute all audio output"),
         ("+ / -", "Master volume up / down"),
-        ("t", "Cycle color theme (Catppuccin, Nord, Gruvbox, Tokyo Night, Monokai)"),
         ("?", "Toggle this Help overlay"),
         ("q / Esc", "Quit application (or close modal / exit fullscreen)"),
     ];

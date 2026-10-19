@@ -15,6 +15,7 @@ pub enum ActiveFocus {
 }
 
 impl ActiveFocus {
+    #[allow(dead_code)]
     pub fn name(&self) -> &'static str {
         match self {
             ActiveFocus::Timer => "Timer",
@@ -65,7 +66,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let config = AppConfig::load();
-        let theme = Theme::new(config.theme);
+        let theme = Theme::default();
         let mut audio = AudioController::new();
 
         // Load saved user presets
@@ -281,13 +282,6 @@ impl App {
                 self.fullscreen = !self.fullscreen;
                 return;
             }
-            KeyCode::Char('t') => {
-                let next_kind = self.theme.kind.next();
-                self.theme = Theme::new(next_kind);
-                self.config.theme = next_kind;
-                let _ = self.config.save();
-                return;
-            }
             KeyCode::Char('b') => {
                 self.audio.cycle_binaural_mode();
                 return;
@@ -393,7 +387,6 @@ impl App {
         self.config.master_volume = self.audio.engine.master_volume;
         self.config.muted = self.audio.engine.is_muted;
         self.config.visualizer = self.visual.mode;
-        self.config.theme = self.theme.kind;
         self.config.presets = self.audio.user_presets.clone();
         let _ = self.config.save();
         self.should_quit = true;

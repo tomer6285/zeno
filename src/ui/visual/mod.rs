@@ -37,6 +37,10 @@ impl VisualCoordinator {
         self.mode = self.mode.next();
     }
 
+    pub fn prev_mode(&mut self) {
+        self.mode = self.mode.prev();
+    }
+
     pub fn resize(&mut self, width: u16, height: u16) {
         self.rain.resize(width, height);
         self.fire.resize(width, height);

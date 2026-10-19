@@ -14,6 +14,32 @@ pub enum ActiveFocus {
     Visualizer,
 }
 
+impl ActiveFocus {
+    pub fn name(&self) -> &'static str {
+        match self {
+            ActiveFocus::Timer => "Timer",
+            ActiveFocus::Mixer => "Mixer",
+            ActiveFocus::Visualizer => "Visualizer",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            ActiveFocus::Timer => ActiveFocus::Mixer,
+            ActiveFocus::Mixer => ActiveFocus::Visualizer,
+            ActiveFocus::Visualizer => ActiveFocus::Timer,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            ActiveFocus::Timer => ActiveFocus::Visualizer,
+            ActiveFocus::Visualizer => ActiveFocus::Mixer,
+            ActiveFocus::Mixer => ActiveFocus::Timer,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModalState {
     None,
@@ -25,6 +51,7 @@ pub enum ModalState {
 pub struct App {
     pub should_quit: bool,
     pub focus: ActiveFocus,
+    pub fullscreen: bool,
     pub modal: ModalState,
     pub mixer_selected_index: usize,
     pub timer: TimerManager,
@@ -59,6 +86,7 @@ impl App {
         Self {
             should_quit: false,
             focus: ActiveFocus::Timer,
+            fullscreen: false,
             modal: ModalState::None,
             mixer_selected_index: 0,
             timer,
@@ -215,88 +243,149 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => {
+            KeyCode::Char('q') => {
                 self.save_and_quit();
+                return;
+            }
+            KeyCode::Esc => {
+                if self.fullscreen {
+                    self.fullscreen = false;
+                } else {
+                    self.save_and_quit();
+                }
+                return;
             }
             KeyCode::Char('?') => {
                 self.modal = ModalState::Help;
+                return;
             }
             KeyCode::Char('p') => {
                 self.modal = ModalState::PresetBrowser { selected_index: 0 };
+                return;
             }
             KeyCode::Char('S') => {
                 self.modal = ModalState::SaveMixPrompt {
                     input_text: String::new(),
                 };
+                return;
             }
             KeyCode::Tab => {
-                self.focus = match self.focus {
-                    ActiveFocus::Timer => ActiveFocus::Mixer,
-                    ActiveFocus::Mixer => ActiveFocus::Visualizer,
-                    ActiveFocus::Visualizer => ActiveFocus::Timer,
-                };
+                self.focus = self.focus.next();
+                return;
             }
-            KeyCode::Char(' ') => {
-                self.timer.toggle_run();
+            KeyCode::BackTab => {
+                self.focus = self.focus.prev();
+                return;
             }
-            KeyCode::Char('r') => {
-                if let Some(alert) = self.timer.reset_or_skip() {
-                    self.handle_timer_alert(alert);
-                }
-            }
-            KeyCode::Char('1') => {
-                self.timer.set_mode(TimerMode::Pomodoro);
-            }
-            KeyCode::Char('2') => {
-                self.timer.set_mode(TimerMode::Stopwatch);
-            }
-            KeyCode::Char('3') => {
-                self.timer.set_mode(TimerMode::Countdown);
-            }
-            KeyCode::Char('v') => {
-                self.visual.cycle_mode();
-            }
-            KeyCode::Char('b') => {
-                self.audio.cycle_binaural_mode();
-            }
-            KeyCode::Char('m') => {
-                self.audio.toggle_mute();
-            }
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.audio.adjust_master_volume(0.05);
-            }
-            KeyCode::Char('-') => {
-                self.audio.adjust_master_volume(-0.05);
+            KeyCode::Char('f') | KeyCode::Char('F') => {
+                self.fullscreen = !self.fullscreen;
+                return;
             }
             KeyCode::Char('t') => {
                 let next_kind = self.theme.kind.next();
                 self.theme = Theme::new(next_kind);
                 self.config.theme = next_kind;
                 let _ = self.config.save();
+                return;
             }
-
-            // Mixer navigation
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.mixer_selected_index > 0 {
-                    self.mixer_selected_index -= 1;
-                }
+            KeyCode::Char('b') => {
+                self.audio.cycle_binaural_mode();
+                return;
             }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if !self.audio.tracks.is_empty() && self.mixer_selected_index + 1 < self.audio.tracks.len() {
-                    self.mixer_selected_index += 1;
-                }
+            KeyCode::Char('m') => {
+                self.audio.toggle_mute();
+                return;
             }
-            KeyCode::Left | KeyCode::Char('h') => {
-                self.audio.adjust_track_volume(self.mixer_selected_index, -0.05);
+            KeyCode::Char('+') | KeyCode::Char('=') => {
+                self.audio.adjust_master_volume(0.05);
+                return;
             }
-            KeyCode::Right | KeyCode::Char('l') => {
-                self.audio.adjust_track_volume(self.mixer_selected_index, 0.05);
+            KeyCode::Char('-') => {
+                self.audio.adjust_master_volume(-0.05);
+                return;
             }
-            KeyCode::Enter => {
-                self.audio.toggle_track(self.mixer_selected_index);
-            }
-
             _ => {}
+        }
+
+        // 3. Module Focus-Scoped Controls
+        match self.focus {
+            ActiveFocus::Timer => {
+                match key.code {
+                    KeyCode::Char(' ') | KeyCode::Enter => {
+                        self.timer.toggle_run();
+                    }
+                    KeyCode::Char('r') => {
+                        if let Some(alert) = self.timer.reset_or_skip() {
+                            self.handle_timer_alert(alert);
+                        }
+                    }
+                    KeyCode::Char('1') => {
+                        self.timer.set_mode(TimerMode::Pomodoro);
+                    }
+                    KeyCode::Char('2') => {
+                        self.timer.set_mode(TimerMode::Stopwatch);
+                    }
+                    KeyCode::Char('3') => {
+                        self.timer.set_mode(TimerMode::Countdown);
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.timer.prev_mode();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.timer.cycle_mode();
+                    }
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        self.timer.adjust_duration(-5);
+                    }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        self.timer.adjust_duration(5);
+                    }
+                    _ => {}
+                }
+            }
+            ActiveFocus::Mixer => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if self.mixer_selected_index > 0 {
+                            self.mixer_selected_index -= 1;
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if !self.audio.tracks.is_empty() && self.mixer_selected_index + 1 < self.audio.tracks.len() {
+                            self.mixer_selected_index += 1;
+                        }
+                    }
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        self.audio.adjust_track_volume(self.mixer_selected_index, -0.05);
+                    }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        self.audio.adjust_track_volume(self.mixer_selected_index, 0.05);
+                    }
+                    KeyCode::Enter => {
+                        self.audio.toggle_track(self.mixer_selected_index);
+                    }
+                    KeyCode::Char(' ') => {
+                        // Global convenience: Space still toggles timer
+                        self.timer.toggle_run();
+                    }
+                    _ => {}
+                }
+            }
+            ActiveFocus::Visualizer => {
+                match key.code {
+                    KeyCode::Up | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') => {
+                        self.visual.prev_mode();
+                    }
+                    KeyCode::Down | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Char('v') | KeyCode::Enter => {
+                        self.visual.cycle_mode();
+                    }
+                    KeyCode::Char(' ') => {
+                        // Global convenience: Space still toggles timer
+                        self.timer.toggle_run();
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -308,5 +397,85 @@ impl App {
         self.config.presets = self.audio.user_presets.clone();
         let _ = self.config.save();
         self.should_quit = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_active_focus_cycling() {
+        let focus = ActiveFocus::Timer;
+        assert_eq!(focus.name(), "Timer");
+        assert_eq!(focus.next(), ActiveFocus::Mixer);
+        assert_eq!(focus.next().next(), ActiveFocus::Visualizer);
+        assert_eq!(focus.next().next().next(), ActiveFocus::Timer);
+
+        assert_eq!(focus.prev(), ActiveFocus::Visualizer);
+        assert_eq!(focus.prev().prev(), ActiveFocus::Mixer);
+        assert_eq!(focus.prev().prev().prev(), ActiveFocus::Timer);
+    }
+
+    #[test]
+    fn test_fullscreen_toggle_and_tab_navigation() {
+        let mut app = App::new();
+        assert_eq!(app.focus, ActiveFocus::Timer);
+        assert!(!app.fullscreen);
+
+        // Toggle fullscreen with 'f'
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        assert!(app.fullscreen);
+
+        // Tab in fullscreen switches focused module while remaining in fullscreen
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, ActiveFocus::Mixer);
+        assert!(app.fullscreen);
+
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, ActiveFocus::Visualizer);
+        assert!(app.fullscreen);
+
+        // Esc exits fullscreen instead of quitting
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!app.fullscreen);
+        assert!(!app.should_quit);
+
+        // Esc again quits
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn test_focus_scoped_key_handling() {
+        let mut app = App::new();
+        assert_eq!(app.focus, ActiveFocus::Timer);
+
+        // When timer is focused, h/l adjusts duration
+        let initial_dur = app.timer.pomodoro.work_duration;
+        app.handle_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+        assert_eq!(app.timer.pomodoro.work_duration, initial_dur + Duration::from_secs(5 * 60));
+
+        // When timer is focused, j/k switches mode
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.timer.mode, TimerMode::Stopwatch);
+
+        // Switch focus to Mixer
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, ActiveFocus::Mixer);
+
+        // In mixer, j navigates track index
+        assert_eq!(app.mixer_selected_index, 0);
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.mixer_selected_index, 1);
+
+        // Switch focus to Visualizer
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.focus, ActiveFocus::Visualizer);
+
+        // In visualizer, j cycles visual mode
+        let current_visual = app.visual.mode;
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_ne!(app.visual.mode, current_visual);
     }
 }

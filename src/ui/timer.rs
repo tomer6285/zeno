@@ -107,6 +107,7 @@ pub fn render_timer(
     timer: &TimerManager,
     theme: &Theme,
     is_focused: bool,
+    is_fullscreen: bool,
 ) {
     let border_color = if is_focused {
         theme.border_active
@@ -114,12 +115,26 @@ pub fn render_timer(
         theme.border
     };
 
+    let title_badge = if is_fullscreen {
+        " [FULLSCREEN - 'f' to exit]"
+    } else if is_focused {
+        " [FOCUSED]"
+    } else {
+        ""
+    };
+
+    let title_style = if is_focused {
+        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.text_muted)
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
         .title(Span::styled(
-            format!(" ⏳ Focus Timer ({}) ", timer.mode.name()),
-            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+            format!(" ⏳ Focus Timer ({}){} ", timer.mode.name(), title_badge),
+            title_style,
         ));
 
     let inner = block.inner(area);
@@ -129,17 +144,30 @@ pub fn render_timer(
         return;
     }
 
+    // When fullscreen with ample vertical height, add padding to nicely center the digits
+    let top_pad = if is_fullscreen && inner.height > 16 {
+        (inner.height.saturating_sub(14)) / 3
+    } else {
+        0
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Phase / status banner
-            Constraint::Length(1), // Spacer
-            Constraint::Length(5), // Big Digits clock
-            Constraint::Length(1), // Spacer
-            Constraint::Length(1), // Gauge progress bar
-            Constraint::Min(1),    // Session info & hints
+            Constraint::Length(top_pad), // Top pad for fullscreen centering
+            Constraint::Length(1),       // Phase / status banner
+            Constraint::Length(1),       // Spacer
+            Constraint::Length(5),       // Big Digits clock
+            Constraint::Length(1),       // Spacer
+            Constraint::Length(1),       // Gauge progress bar
+            Constraint::Min(1),          // Session info & hints
         ])
         .split(inner);
+
+    let banner_chunk = chunks[1];
+    let clock_chunk = chunks[3];
+    let gauge_chunk = chunks[5];
+    let info_chunk = chunks[6];
 
     // 1. Phase / Mode Banner
     let (phase_str, phase_color) = match timer.mode {
@@ -165,7 +193,7 @@ pub fn render_timer(
     ]);
     f.render_widget(
         Paragraph::new(banner_line).alignment(Alignment::Center),
-        chunks[0],
+        banner_chunk,
     );
 
     // 2. Format Time String (MM:SS or HH:MM:SS)
@@ -217,7 +245,7 @@ pub fn render_timer(
 
     f.render_widget(
         Paragraph::new(digit_spans).alignment(Alignment::Center),
-        chunks[2],
+        clock_chunk,
     );
 
     // 3. Progress Bar Gauge
@@ -241,7 +269,7 @@ pub fn render_timer(
         ))
         .gauge_style(Style::default().fg(phase_color).bg(theme.surface));
 
-    f.render_widget(gauge, chunks[4]);
+    f.render_widget(gauge, gauge_chunk);
 
     // 4. Session info & Controls hint
     let mut info_spans = Vec::new();
@@ -260,8 +288,9 @@ pub fn render_timer(
                 }
                 dots.push(' ');
             }
+            let duration_mins = timer.pomodoro.work_duration.as_secs() / 60;
             info_spans.push(Span::styled(
-                format!("Cycle [{}] {} of {}  |  Total Completed: {}", dots.trim(), current, total_cycles, timer.pomodoro.completed_sessions),
+                format!("Cycle [{}] {} of {}  |  Duration: {}m  |  Total: {}", dots.trim(), current, total_cycles, duration_mins, timer.pomodoro.completed_sessions),
                 Style::default().fg(theme.text_muted),
             ));
         }
@@ -279,14 +308,29 @@ pub fn render_timer(
         }
     }
 
-    let control_hints = Line::from(vec![
-        Span::styled("[Space] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
-        Span::raw(if timer.is_running() { "Pause  " } else { "Start  " }),
-        Span::styled("[r] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
-        Span::raw("Reset/Skip  "),
-        Span::styled("[1/2/3] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
-        Span::raw("Pomodoro/Stopwatch/Countdown"),
-    ]);
+    let control_hints = if is_focused {
+        Line::from(vec![
+            Span::styled("[h/l] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::raw("±5m  "),
+            Span::styled("[j/k] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::raw("Mode  "),
+            Span::styled("[Space] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+            Span::raw(if timer.is_running() { "Pause  " } else { "Start  " }),
+            Span::styled("[r] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+            Span::raw("Reset/Skip  "),
+            Span::styled("[f] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+            Span::raw(if is_fullscreen { "Normal" } else { "Fullscreen" }),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("[Tab] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+            Span::raw("Focus Timer  "),
+            Span::styled("[Space] ", Style::default().fg(theme.text_muted)),
+            Span::raw(if timer.is_running() { "Pause  " } else { "Start  " }),
+            Span::styled("[r] ", Style::default().fg(theme.text_muted)),
+            Span::raw("Reset"),
+        ])
+    };
 
     let footer_text = vec![
         Line::from(info_spans),
@@ -296,6 +340,6 @@ pub fn render_timer(
 
     f.render_widget(
         Paragraph::new(footer_text).alignment(Alignment::Center),
-        chunks[5],
+        info_chunk,
     );
 }

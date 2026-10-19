@@ -9,7 +9,7 @@ use ratatui::{
 use crate::audio::AudioController;
 use crate::ui::theme::Theme;
 
-pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -36,14 +36,14 @@ pub fn render_preset_browser(
     selected_index: usize,
     theme: &Theme,
 ) {
-    let dialog_area = centered_rect(65, 75, area);
+    let dialog_area = centered_rect(75, 75, area);
     f.render_widget(Clear, dialog_area);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.primary))
         .title(Span::styled(
-            " 🎧 Soundscape Preset Browser ",
+            " 🌿 Preset Soundscape Library ",
             Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
         ));
 
@@ -53,21 +53,19 @@ pub fn render_preset_browser(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(6),    // Presets List
-            Constraint::Length(5), // Details / Track Breakdown of Selected
-            Constraint::Length(2), // Hotkey instructions
+            Constraint::Min(8),    // List of presets
+            Constraint::Length(4), // Preset details / preview
+            Constraint::Length(1), // Footer instruction
         ])
         .split(inner);
 
-    // Combine factory presets and user presets
+    let mut lines = Vec::new();
     let total_factory = audio.factory_presets.len();
 
-    let mut lines = Vec::new();
-
-    // Section 1: Factory Presets
+    // 1. Factory Presets Section
     lines.push(Line::from(Span::styled(
-        "── Factory Presets ──────────────────────────",
-        Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
+        "── Factory Soundscapes ────────────────────────",
+        Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
     )));
 
     for (i, preset) in audio.factory_presets.iter().enumerate() {
@@ -77,17 +75,6 @@ pub fn render_preset_browser(
         let marker = if is_selected { " ▶ " } else { "   " };
         let active_badge = if is_active { " [ACTIVE]" } else { "" };
 
-        let name_span = Span::styled(
-            format!("{:<20}{}", preset.name, active_badge),
-            if is_selected {
-                Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)
-            } else if is_active {
-                Style::default().fg(theme.success)
-            } else {
-                Style::default().fg(theme.text)
-            },
-        );
-
         let row_style = if is_selected {
             Style::default().bg(theme.highlight)
         } else {
@@ -96,17 +83,27 @@ pub fn render_preset_browser(
 
         lines.push(Line::from(vec![
             Span::styled(marker, Style::default().fg(theme.accent)),
-            name_span,
+            Span::styled(
+                format!("{:<20}{}", preset.name, active_badge),
+                if is_selected {
+                    Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)
+                } else if is_active {
+                    Style::default().fg(theme.success)
+                } else {
+                    Style::default().fg(theme.text)
+                },
+            ),
             Span::raw("  "),
             Span::styled(&preset.description, Style::default().fg(theme.text_muted)),
         ]).style(row_style));
     }
 
-    // Section 2: User Presets
     lines.push(Line::raw(""));
+
+    // 2. User Presets Section
     lines.push(Line::from(Span::styled(
-        "── User Saved Presets ──────────────────────",
-        Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+        "── Saved User Mixes ──────────────────────────",
+        Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
     )));
 
     if audio.user_presets.is_empty() {
@@ -238,34 +235,32 @@ pub fn render_save_preset_modal(
             Constraint::Length(1), // Prompt
             Constraint::Length(3), // Input box
             Constraint::Length(1), // Spacer
-            Constraint::Length(1), // Controls
+            Constraint::Length(1), // Footer hint
         ])
         .split(inner);
 
-    let prompt = Paragraph::new(Span::styled(
-        "Enter a name for this custom sound mix:",
-        Style::default().fg(theme.text),
-    ));
-    f.render_widget(prompt, chunks[0]);
+    f.render_widget(
+        Paragraph::new("Enter a name for your custom soundscape preset:").style(Style::default().fg(theme.text)),
+        chunks[0],
+    );
 
     let input_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.primary));
-    let input_para = Paragraph::new(Line::from(vec![
-        Span::styled(input_text, Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
-        Span::styled("█", Style::default().fg(theme.accent)), // cursor
-    ]))
-    .block(input_block);
-    f.render_widget(input_para, chunks[1]);
 
-    let instructions = Line::from(vec![
+    let input_p = Paragraph::new(format!("  {}█", input_text))
+        .style(Style::default().fg(theme.primary).add_modifier(Modifier::BOLD))
+        .block(input_block);
+    f.render_widget(input_p, chunks[1]);
+
+    let footer_hints = Line::from(vec![
         Span::styled("[Enter] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
-        Span::raw("Save Preset   "),
-        Span::styled("[Esc] ", Style::default().fg(theme.text_muted).add_modifier(Modifier::BOLD)),
+        Span::raw("Save Preset    "),
+        Span::styled("[Esc] ", Style::default().fg(theme.text_muted)),
         Span::raw("Cancel"),
     ]);
     f.render_widget(
-        Paragraph::new(instructions).alignment(Alignment::Center),
+        Paragraph::new(footer_hints).alignment(Alignment::Center),
         chunks[3],
     );
 }
@@ -275,7 +270,7 @@ pub fn render_help_modal(
     area: Rect,
     theme: &Theme,
 ) {
-    let dialog_area = centered_rect(70, 80, area);
+    let dialog_area = centered_rect(75, 85, area);
     f.render_widget(Clear, dialog_area);
 
     let block = Block::default()
@@ -290,22 +285,25 @@ pub fn render_help_modal(
     f.render_widget(block, dialog_area);
 
     let shortcuts = [
-        ("Space", "Start / Pause active timer"),
-        ("Tab", "Switch focus between Timer and Sound Mixer"),
-        ("r", "Reset active timer or skip to next Pomodoro interval"),
-        ("1 / 2 / 3", "Switch Timer mode (1: Pomodoro, 2: Stopwatch, 3: Countdown)"),
-        ("↑ / ↓ / j / k", "Navigate sound tracks in mixer"),
-        ("← / → / h / l", "Decrease / Increase volume of selected track"),
-        ("Enter", "Toggle selected track ON / OFF"),
+        ("Tab / Shift+Tab", "Switch focus between Timer ↔ Sound Mixer ↔ Visualizer"),
+        ("f", "Toggle Fullscreen for the currently focused module"),
+        ("Timer: Space/Enter", "Start / Pause active timer"),
+        ("Timer: h / l", "Adjust duration (±5 mins) for Pomodoro & Countdown"),
+        ("Timer: j / k", "Switch Timer mode (Pomodoro, Stopwatch, Countdown)"),
+        ("Timer: r", "Reset active timer or skip to next Pomodoro interval"),
+        ("Timer: 1 / 2 / 3", "Direct jump to Pomodoro, Stopwatch, or Countdown"),
+        ("Mixer: j / k", "Navigate sound tracks in mixer"),
+        ("Mixer: h / l", "Decrease / Increase volume of selected track"),
+        ("Mixer: Enter", "Toggle selected track ON / OFF"),
+        ("Visual: j / k / v", "Switch ambient atmosphere effect (Rain, Fire, Wave, Off)"),
         ("p", "Open Preset Browser modal (select, preview, apply, or delete)"),
         ("S / Ctrl+S", "Save current mix as a new User Preset"),
-        ("v", "Cycle ambient visualizer (Rain / Campfire / Wave / Off)"),
         ("b", "Cycle binaural beats frequency (Alpha 10Hz / Beta 14Hz / Gamma 40Hz)"),
         ("m", "Mute / Unmute all audio output"),
         ("+ / -", "Master volume up / down"),
         ("t", "Cycle color theme (Catppuccin, Nord, Gruvbox, Tokyo Night, Monokai)"),
         ("?", "Toggle this Help overlay"),
-        ("q / Esc", "Quit application (or close active modal)"),
+        ("q / Esc", "Quit application (or close modal / exit fullscreen)"),
     ];
 
     let mut lines = Vec::new();
@@ -317,7 +315,7 @@ pub fn render_help_modal(
 
     for (key, desc) in shortcuts {
         lines.push(Line::from(vec![
-            Span::styled(format!("{:<16}", key), Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{:<18}", key), Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
             Span::styled(desc, Style::default().fg(theme.text)),
         ]));
     }

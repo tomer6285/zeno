@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::audio::presets::VisualizerType;
 use crate::audio::AudioController;
 use crate::ui::theme::Theme;
 
@@ -108,8 +109,8 @@ pub fn render_preset_browser(
 
     if audio.user_presets.is_empty() {
         lines.push(Line::from(Span::styled(
-            "   (No user presets saved yet. Press 'S' in mixer to save one!)",
-            Style::default().fg(theme.text_muted),
+            "   (No saved mixes yet. Customize tracks and press 'S' to save current mix)",
+            Style::default().fg(theme.text_muted).add_modifier(Modifier::ITALIC),
         )));
     } else {
         for (i, preset) in audio.user_presets.iter().enumerate() {
@@ -209,6 +210,135 @@ pub fn render_preset_browser(
     );
 }
 
+pub fn render_visualizer_menu(
+    f: &mut Frame,
+    area: Rect,
+    current_mode: VisualizerType,
+    selected_index: usize,
+    theme: &Theme,
+) {
+    let dialog_area = centered_rect(80, 85, area);
+    f.render_widget(Clear, dialog_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent))
+        .title(Span::styled(
+            " 🌌 Ambient Atmosphere Visualizers ",
+            Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+        ));
+
+    let inner = block.inner(dialog_area);
+    f.render_widget(block, dialog_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(14),   // Visualizer list
+            Constraint::Length(4), // Details box
+            Constraint::Length(1), // Footer instruction
+        ])
+        .split(inner);
+
+    let mut lines = Vec::new();
+
+    // Nature & Atmosphere Header
+    lines.push(Line::from(Span::styled(
+        "── Nature & Atmospheres ──────────────────────────────────────",
+        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+    )));
+
+    for (i, &v_type) in VisualizerType::ALL.iter().enumerate() {
+        if i == 8 {
+            lines.push(Line::raw(""));
+            lines.push(Line::from(Span::styled(
+                "── Cosmic & Focus Aids ───────────────────────────────────────",
+                Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
+            )));
+        }
+
+        let is_selected = i == selected_index;
+        let is_active = v_type == current_mode;
+
+        let marker = if is_selected { " ▶ " } else { "   " };
+        let active_badge = if is_active { " [ACTIVE]" } else { "" };
+
+        let row_style = if is_selected {
+            Style::default().bg(theme.highlight)
+        } else {
+            Style::default()
+        };
+
+        lines.push(
+            Line::from(vec![
+                Span::styled(marker, Style::default().fg(theme.accent)),
+                Span::raw(format!("{} ", v_type.icon())),
+                Span::styled(
+                    format!("{:<22}{}", v_type.name(), active_badge),
+                    if is_selected {
+                        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)
+                    } else if is_active {
+                        Style::default().fg(theme.success).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme.text)
+                    },
+                ),
+                Span::raw("  "),
+                Span::styled(v_type.description(), Style::default().fg(theme.text_muted)),
+            ])
+            .style(row_style),
+        );
+    }
+
+    f.render_widget(Paragraph::new(lines), chunks[0]);
+
+    // Selected Visualizer Details Box
+    if let Some(&selected_v) = VisualizerType::ALL.get(selected_index) {
+        let details_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.border))
+            .title(Span::styled(
+                format!(" {} Atmosphere Info ", selected_v.icon()),
+                Style::default().fg(theme.secondary),
+            ));
+
+        let details_inner = details_block.inner(chunks[1]);
+        f.render_widget(details_block, chunks[1]);
+
+        let is_active_str = if selected_v == current_mode { " [Currently Active]" } else { "" };
+        let details_lines = vec![
+            Line::from(vec![
+                Span::styled(
+                    format!("{}{}", selected_v.name(), is_active_str),
+                    Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  -  "),
+                Span::styled(selected_v.description(), Style::default().fg(theme.text)),
+            ]),
+            Line::from(vec![
+                Span::styled("Ideal Companion Tracks: ", Style::default().fg(theme.accent)),
+                Span::styled(selected_v.companion_tracks(), Style::default().fg(theme.text_muted)),
+            ]),
+        ];
+
+        f.render_widget(Paragraph::new(details_lines), details_inner);
+    }
+
+    // Modal Footer Instructions
+    let footer_hints = Line::from(vec![
+        Span::styled("[↑/↓/j/k] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+        Span::raw("Select  "),
+        Span::styled("[Enter] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+        Span::raw("Apply Atmosphere  "),
+        Span::styled("[Esc / v] ", Style::default().fg(theme.text_muted)),
+        Span::raw("Close"),
+    ]);
+    f.render_widget(
+        Paragraph::new(footer_hints).alignment(Alignment::Center),
+        chunks[2],
+    );
+}
+
 pub fn render_save_preset_modal(
     f: &mut Frame,
     area: Rect,
@@ -270,7 +400,7 @@ pub fn render_help_modal(
     area: Rect,
     theme: &Theme,
 ) {
-    let dialog_area = centered_rect(75, 85, area);
+    let dialog_area = centered_rect(75, 88, area);
     f.render_widget(Clear, dialog_area);
 
     let block = Block::default()
@@ -295,7 +425,7 @@ pub fn render_help_modal(
         ("Mixer: j / k", "Navigate sound tracks in mixer"),
         ("Mixer: h / l", "Decrease / Increase volume of selected track"),
         ("Mixer: Enter", "Toggle selected track ON / OFF"),
-        ("Visual: j / k / v", "Switch ambient atmosphere effect (Rain, Fire, Wave, Off)"),
+        ("v", "Open Atmosphere Menu (select from 12 living animations)"),
         ("p", "Open Preset Browser modal (select, preview, apply, or delete)"),
         ("S / Ctrl+S", "Save current mix as a new User Preset"),
         ("b", "Cycle binaural beats frequency (Alpha 10Hz / Beta 14Hz / Gamma 40Hz)"),

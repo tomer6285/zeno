@@ -15,7 +15,9 @@ use ratatui::{
 
 use crate::app::{ActiveFocus, App, ModalState};
 use crate::ui::mixer::render_mixer;
-use crate::ui::presets_dialog::{render_help_modal, render_preset_browser, render_save_preset_modal};
+use crate::ui::presets_dialog::{
+    render_help_modal, render_preset_browser, render_save_preset_modal, render_visualizer_menu,
+};
 use crate::ui::timer::render_timer;
 
 pub fn render(f: &mut Frame, app: &mut App) {
@@ -158,9 +160,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
         ActiveFocus::Visualizer => {
             footer_spans.push(Span::styled("[j/k] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)));
-            footer_spans.push(Span::raw("Effect  "));
-            footer_spans.push(Span::styled("[v/Enter] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)));
             footer_spans.push(Span::raw("Cycle  "));
+            footer_spans.push(Span::styled("[v/Enter] ", Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)));
+            footer_spans.push(Span::raw("Menu  "));
         }
     }
 
@@ -170,6 +172,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     footer_spans.push(Span::styled("[f] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)));
     footer_spans.push(Span::raw(if app.fullscreen { "Normal  " } else { "Fullscreen  " }));
+
+    footer_spans.push(Span::styled("[v] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)));
+    footer_spans.push(Span::raw("Atmosphere  "));
 
     footer_spans.push(Span::styled("[p] ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)));
     footer_spans.push(Span::raw("Presets  "));
@@ -197,6 +202,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
     match &app.modal {
         ModalState::PresetBrowser { selected_index } => {
             render_preset_browser(f, area, &app.audio, *selected_index, theme);
+        }
+        ModalState::VisualizerMenu { selected_index } => {
+            render_visualizer_menu(f, area, app.visual.mode, *selected_index, theme);
         }
         ModalState::SaveMixPrompt { input_text } => {
             render_save_preset_modal(f, area, input_text, theme);

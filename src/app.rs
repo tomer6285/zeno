@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::audio::presets::VisualizerType;
 use crate::audio::AudioController;
 use crate::config::AppConfig;
 use crate::timer::{TimerAlert, TimerManager, TimerMode};
@@ -45,6 +46,7 @@ impl ActiveFocus {
 pub enum ModalState {
     None,
     PresetBrowser { selected_index: usize },
+    VisualizerMenu { selected_index: usize },
     SaveMixPrompt { input_text: String },
     Help,
 }
@@ -232,6 +234,38 @@ impl App {
                 }
                 return;
             }
+            ModalState::VisualizerMenu { selected_index } => {
+                let total = VisualizerType::ALL.len();
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('v') => {
+                        self.modal = ModalState::None;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if *selected_index > 0 {
+                            *selected_index -= 1;
+                        } else {
+                            *selected_index = total.saturating_sub(1);
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if *selected_index + 1 < total {
+                            *selected_index += 1;
+                        } else {
+                            *selected_index = 0;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if let Some(&chosen) = VisualizerType::ALL.get(*selected_index) {
+                            self.visual.set_mode(chosen);
+                            self.config.visualizer = chosen;
+                            let _ = self.config.save();
+                        }
+                        self.modal = ModalState::None;
+                    }
+                    _ => {}
+                }
+                return;
+            }
             ModalState::None => {}
         }
 
@@ -262,6 +296,14 @@ impl App {
             }
             KeyCode::Char('p') => {
                 self.modal = ModalState::PresetBrowser { selected_index: 0 };
+                return;
+            }
+            KeyCode::Char('v') => {
+                let selected_index = VisualizerType::ALL
+                    .iter()
+                    .position(|&m| m == self.visual.mode)
+                    .unwrap_or(0);
+                self.modal = ModalState::VisualizerMenu { selected_index };
                 return;
             }
             KeyCode::Char('S') => {
@@ -369,9 +411,18 @@ impl App {
                 match key.code {
                     KeyCode::Up | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') => {
                         self.visual.prev_mode();
+                        self.config.visualizer = self.visual.mode;
                     }
-                    KeyCode::Down | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Char('v') | KeyCode::Enter => {
+                    KeyCode::Down | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') => {
                         self.visual.cycle_mode();
+                        self.config.visualizer = self.visual.mode;
+                    }
+                    KeyCode::Char('v') | KeyCode::Enter => {
+                        let selected_index = VisualizerType::ALL
+                            .iter()
+                            .position(|&m| m == self.visual.mode)
+                            .unwrap_or(0);
+                        self.modal = ModalState::VisualizerMenu { selected_index };
                     }
                     KeyCode::Char(' ') => {
                         // Global convenience: Space still toggles timer
@@ -470,5 +521,46 @@ mod tests {
         let current_visual = app.visual.mode;
         app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
         assert_ne!(app.visual.mode, current_visual);
+
+        // Pressing 'v' opens Visualizer Menu
+        app.handle_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE));
+        match app.modal {
+            ModalState::VisualizerMenu { selected_index } => {
+                let expected_idx = VisualizerType::ALL.iter().position(|&m| m == app.visual.mode).unwrap();
+                assert_eq!(selected_index, expected_idx);
+            }
+            _ => panic!("Expected ModalState::VisualizerMenu"),
+        }
+    }
+
+    #[test]
+    fn test_visualizer_menu_navigation_and_selection() {
+        let mut app = App::new();
+        let initial_idx = VisualizerType::ALL.iter().position(|&m| m == app.visual.mode).unwrap();
+
+        // Press 'v' to open menu
+        app.handle_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE));
+        assert!(matches!(app.modal, ModalState::VisualizerMenu { .. }));
+
+        // Navigate down
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        let expected_next_idx = (initial_idx + 1) % VisualizerType::ALL.len();
+        if let ModalState::VisualizerMenu { selected_index } = app.modal {
+            assert_eq!(selected_index, expected_next_idx);
+        } else {
+            panic!("Expected VisualizerMenu");
+        }
+
+        // Apply with Enter
+        let target_mode = VisualizerType::ALL[expected_next_idx];
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.modal, ModalState::None);
+        assert_eq!(app.visual.mode, target_mode);
+
+        // Reopen with 'v' and close with 'Esc'
+        app.handle_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE));
+        assert!(matches!(app.modal, ModalState::VisualizerMenu { .. }));
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.modal, ModalState::None);
     }
 }

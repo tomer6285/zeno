@@ -25,11 +25,11 @@ Zeno pairs multi-track ambient sound mixing with flexible focus timing (Pomodoro
 - **Presets System**:
   - Built-in factory scenes:
     - *Cozy Cabin*: Fireplace (60%) + Rain (35%) + Forest (15%) with Campfire visualizer.
-    - *Midnight Express*: Brown Noise (50%) + Rain (30%) + White Noise (10%) with Spectrum Wave.
+    - *Midnight Express*: Brown Noise (50%) + Rain (30%) + White Noise (10%) with Windowpane visualizer.
     - *Rainy Cafe*: Cafe (45%) + Rain (40%) with Rainfall visualizer.
-    - *Deep Space*: Brown Noise (70%) + White Noise (10%) + 40Hz Gamma binaural tone.
-    - *Zen Garden*: Forest (50%) + Rain (20%) + 10Hz Alpha binaural tone.
-    - *Ocean Slumber*: Ocean Waves (65%) + Pink Noise (25%).
+    - *Deep Space*: Brown Noise (70%) + White Noise (10%) + 40Hz Gamma binaural tone with Starfield visualizer.
+    - *Zen Garden*: Forest (50%) + Rain (20%) + 10Hz Alpha binaural tone with Zen Pond Ripples visualizer.
+    - *Ocean Slumber*: Ocean Waves (65%) + Pink Noise (25%) with Ocean Shoreline visualizer.
   - In-TUI quick preset creation (`S` / `Ctrl+S`): dial in any mix, name it, and save it.
   - Preset browser modal (`p`): navigate, preview, apply, or delete custom presets (`d`).
   - Persistent serialization to `~/.config/zeno/config.toml`.
@@ -41,11 +41,19 @@ Zeno pairs multi-track ambient sound mixing with flexible focus timing (Pomodoro
   - Big ASCII digit clock display with interval completion progress bar.
   - Gentle singing bowl / Zen bell chime and system desktop notifications on completion.
 
-- **Living ASCII Visualizers & Themes**:
+- **Living ASCII Visualizers & Atmospheres (`v`)**:
   - *Rainfall*: Falling rain streaks with puddle splash ripples.
-  - *Campfire*: Cellular automata heat simulation with fiery color gradients.
+  - *Windowpane*: Gentle condensation and trickling rivulets meandering down glass.
+  - *Zen Pond Ripples*: Concentric water ripples expanding from droplet impacts on a tranquil pond with floating lotus blossoms.
+  - *Ocean Shoreline*: Rhythmic rolling surf and receding tidal wash leaving glistening wet sand.
+  - *Campfire*: Cellular automata heat simulation with fiery color gradients and rising sparks.
+  - *Fireflies*: Bioluminescent motes drifting peacefully in the dark with smooth organic wandering and glowing auras.
+  - *Drifting Leaves*: Autumn breeze with swaying, falling leaves that settle into a gentle ground bed.
+  - *Aurora Borealis*: Translucent shimmering polar curtains dancing across starry skies.
+  - *Deep Space Starfield*: 3D cosmic starfield drifting and warping through deep space.
   - *Spectrum Wave*: Audio spectrum equalizer reacting in real-time to active track frequencies.
-  - Switchable themes: **Catppuccin Mocha**, **Catppuccin Macchiato**, **Nord**, **Gruvbox Dark**, **Tokyo Night**, and **Monokai**.
+  - *Breathing Mandala*: Concentric geometric focus ring paced to relaxing box-breathing rhythm (Inhale, Hold, Exhale, Rest).
+  - *Game of Life*: Conway's cellular automata evolving in slow harmony with decaying ghost trails and auto-seeding.
 
 ---
 
@@ -57,16 +65,15 @@ Zeno pairs multi-track ambient sound mixing with flexible focus timing (Pomodoro
 | `Tab` | Switch focus between Timer, Mixer, and Visualizer |
 | `r` | Reset active timer / skip to next Pomodoro interval |
 | `1` / `2` / `3` | Switch timer mode (`1`: Pomodoro, `2`: Stopwatch, `3`: Countdown) |
-| `↑` / `↓` / `j` / `k` | Navigate sound tracks in mixer |
+| `↑` / `↓` / `j` / `k` | Navigate sound tracks in mixer (or cycle atmosphere when visualizer focused) |
 | `←` / `→` / `h` / `l` | Decrease / Increase volume of selected track |
-| `Enter` | Toggle selected track ON / OFF |
+| `Enter` | Toggle selected track ON / OFF (or open atmosphere menu when visualizer focused) |
+| `v` | Open Ambient Atmosphere Menu (browse and select from 12 living animations) |
 | `p` | Open Preset Browser modal |
 | `S` / `Ctrl+S` | Save current mix as a new User Preset |
-| `v` | Cycle ambient visualizer (Rain / Campfire / Spectrum Wave / Off) |
 | `b` | Cycle binaural beats frequency (Alpha 10Hz / Beta 14Hz / Gamma 40Hz) |
 | `m` | Mute / Unmute all audio output |
 | `+` / `-` | Master volume up / down |
-| `t` | Cycle color theme |
 | `?` | Toggle keybindings & help modal |
 | `q` / `Esc` | Quit application (or close active modal) |
 
@@ -105,12 +112,12 @@ work_duration_mins = 25
 short_break_mins = 5
 long_break_mins = 15
 auto_advance_pomodoro = false
-visualizer = "rain"
+visualizer = "starfield"
 
 [[presets]]
 name = "Late Night Hack"
 description = "Rain, gentle fire, and 40Hz focus tone"
-visualizer = "rain"
+visualizer = "window"
 binaural_hz = 40.0
 
 [presets.tracks]

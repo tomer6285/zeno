@@ -315,28 +315,148 @@ impl Source for RainSource {
     }
 }
 
+/// Resonant wood snap / fracture voice with acoustic cavity resonator and mechanical click transient
+#[derive(Debug, Clone, Copy, Default)]
+struct WoodSnap {
+    y1: f32,
+    y2: f32,
+    a1: f32,
+    a2: f32,
+    click_env: f32,
+    click_decay: f32,
+    noise_weight: f32,
+}
+
+impl WoodSnap {
+    fn trigger(&mut self, freq: f32, decay_ms: f32, amplitude: f32, noise_amt: f32) {
+        let w0 = 2.0 * PI * freq / (SAMPLE_RATE as f32);
+        let decay_samples = (decay_ms / 1000.0) * (SAMPLE_RATE as f32);
+        let r = (-2.5 / decay_samples.max(1.0)).exp();
+        self.a1 = 2.0 * r * w0.cos();
+        self.a2 = -(r * r);
+
+        // Exact normalized bounded resonance: amplitude is strictly bounded by `amplitude`
+        self.y1 = amplitude * r * w0.sin();
+        self.y2 = 0.0;
+
+        // Fast attack transient click (decays in ~1-2 ms)
+        self.click_env = amplitude * 0.7;
+        self.click_decay = (-1.0 / (0.0012 * SAMPLE_RATE as f32)).exp();
+        self.noise_weight = noise_amt;
+    }
+
+    #[inline(always)]
+    fn tick(&mut self, rng: &mut FastRng) -> f32 {
+        let y = self.a1 * self.y1 + self.a2 * self.y2;
+        self.y2 = self.y1;
+        self.y1 = y;
+
+        // Prevent denormal / subnormal floating point numbers
+        if self.y1.abs() < 1e-7 && self.y2.abs() < 1e-7 {
+            self.y1 = 0.0;
+            self.y2 = 0.0;
+        }
+
+        let click = if self.click_env > 1e-4 {
+            let c = (rng.next_signed() * self.noise_weight + (1.0 - self.noise_weight)) * self.click_env;
+            self.click_env *= self.click_decay;
+            c
+        } else {
+            self.click_env = 0.0;
+            0.0
+        };
+
+        y + click
+    }
+}
+
 /// Procedural Fireplace / Campfire Sound Generator
-/// Low warm rumble + wood crackles, pops, and embers with Poisson distribution
+/// Multi-layered organic physical model:
+/// 1. Warm turbulent flame draft & roar (Kellet pink noise with chaotic flicker modulation)
+/// 2. Continuous ember sizzle & moisture evaporation (~2.5 - 5.5 kHz bandpassed flutter)
+/// 3. Resonant wood crackles & clustering grain fractures (Poisson-distributed micro-bursts)
+/// 4. Deep hollow log pops & resin bursts with trailing ember showers
+/// 5. Spatial stereo imaging with subtle panning of individual crackles and draft
 pub struct FireplaceSource {
     rng: FastRng,
-    brown: NoiseSource,
-    pop_env: f32,
-    pop_freq: f32,
-    pop_phase: f32,
+    // Pink noise filter states for flame turbulence (Paul Kellet filter)
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    b3: f32,
+    b4: f32,
+    b5: f32,
+    b6: f32,
+    // Warm flame draft low-pass filter states
+    flame_lp_l: f32,
+    flame_lp_r: f32,
+    draft_val: f32,
+    flicker_lfo: f32,
+    sample_counter: u32,
+
+    // Continuous ember sizzle bandpass
+    sizzle_hp: f32,
+    sizzle_lp: f32,
+    last_sizzle_in: f32,
+
+    // Polyphonic wood crackle voices
+    voices: [WoodSnap; 4],
+    pans: [f32; 4],
+    voice_idx: usize,
+
+    // Cluster burst fracture state
+    cluster_left: u8,
+    cluster_gap: u16,
+    cluster_pan: f32,
+
+    // Log pop / resin burst state (Poisson process)
+    thump: WoodSnap,
+    thump_pan: f32,
+    samples_to_pop: u32,
+    ember_tail: u32,
+
+    // Stereo channel toggling and sample buffer
     channel_toggle: bool,
-    current_sample: f32,
+    current_left: f32,
+    current_right: f32,
 }
 
 impl FireplaceSource {
     pub fn new(seed: u32) -> Self {
+        let mut rng = FastRng::new(seed);
+        let u = rng.next_f32().max(1e-6);
+        let initial_pop_delay = (-u.ln() * 2.5 * SAMPLE_RATE as f32) as u32;
+
         Self {
-            rng: FastRng::new(seed),
-            brown: NoiseSource::new(NoiseKind::Brown, seed + 20),
-            pop_env: 0.0,
-            pop_freq: 800.0,
-            pop_phase: 0.0,
+            rng,
+            b0: 0.0,
+            b1: 0.0,
+            b2: 0.0,
+            b3: 0.0,
+            b4: 0.0,
+            b5: 0.0,
+            b6: 0.0,
+            flame_lp_l: 0.0,
+            flame_lp_r: 0.0,
+            draft_val: 0.5,
+            flicker_lfo: 0.0,
+            sample_counter: 0,
+            sizzle_hp: 0.0,
+            sizzle_lp: 0.0,
+            last_sizzle_in: 0.0,
+            voices: [WoodSnap::default(); 4],
+            pans: [0.0; 4],
+            voice_idx: 0,
+            cluster_left: 0,
+            cluster_gap: 0,
+            cluster_pan: 0.0,
+            thump: WoodSnap::default(),
+            thump_pan: 0.0,
+            samples_to_pop: initial_pop_delay,
+            ember_tail: 0,
             channel_toggle: false,
-            current_sample: 0.0,
+            current_left: 0.0,
+            current_right: 0.0,
         }
     }
 }
@@ -347,36 +467,139 @@ impl Iterator for FireplaceSource {
     fn next(&mut self) -> Option<f32> {
         self.channel_toggle = !self.channel_toggle;
         if self.channel_toggle {
-            // Low fireplace rumble
-            let rumble = self.brown.next().unwrap_or(0.0) * 0.45;
+            // Advancing one stereo frame at SAMPLE_RATE (44.1 kHz)
+            self.sample_counter = self.sample_counter.wrapping_add(1);
 
-            // Trigger crackle/pop
-            if self.pop_env <= 0.001 && self.rng.next_f32() < 0.0006 {
-                self.pop_env = self.rng.next_f32() * 0.7 + 0.3;
-                self.pop_freq = 600.0 + self.rng.next_f32() * 1400.0;
+            // 1. Warm Flame Draft & Roar
+            self.flicker_lfo = (self.flicker_lfo + 0.7 / SAMPLE_RATE as f32).fract();
+            if self.sample_counter % 128 == 0 {
+                let target = 0.40 + self.rng.next_f32() * 0.35 + 0.12 * (self.flicker_lfo * 2.0 * PI).sin();
+                self.draft_val = self.draft_val * 0.92 + target * 0.08;
             }
 
-            let mut pop = 0.0;
-            if self.pop_env > 0.001 {
-                self.pop_phase = (self.pop_phase + self.pop_freq / SAMPLE_RATE as f32).fract();
-                let sine = (self.pop_phase * 2.0 * PI).sin();
-                let noise = self.rng.next_signed();
-                pop = (sine * 0.7 + noise * 0.3) * self.pop_env;
-                self.pop_env *= 0.985; // fast decay
+            // Pink noise generation (Paul Kellet's filter)
+            let white = self.rng.next_signed();
+            self.b0 = 0.99886 * self.b0 + white * 0.0555179;
+            self.b1 = 0.99332 * self.b1 + white * 0.0750759;
+            self.b2 = 0.96900 * self.b2 + white * 0.1538520;
+            self.b3 = 0.86650 * self.b3 + white * 0.3104856;
+            self.b4 = 0.55000 * self.b4 + white * 0.5329522;
+            self.b5 = -0.7616 * self.b5 - white * 0.0168980;
+            let pink = (self.b0 + self.b1 + self.b2 + self.b3 + self.b4 + self.b5 + self.b6 + white * 0.5362) * 0.04;
+            self.b6 = white * 0.115926;
+
+            // Lowpass flame warmth around 280-380 Hz
+            self.flame_lp_l += 0.045 * (pink - self.flame_lp_l);
+            self.flame_lp_r += 0.042 * (pink - self.flame_lp_r);
+            let flame_l = self.flame_lp_l * self.draft_val * 1.6;
+            let flame_r = self.flame_lp_r * self.draft_val * 1.6;
+
+            // 2. Ember Sizzle & Moisture Hiss (bandpassed ~2.5 - 5.5 kHz)
+            let sw = self.rng.next_signed();
+            self.sizzle_hp = 0.75 * (self.sizzle_hp + sw - self.last_sizzle_in);
+            self.last_sizzle_in = sw;
+            self.sizzle_lp += 0.32 * (self.sizzle_hp - self.sizzle_lp);
+            let sizzle = self.sizzle_lp * 0.04;
+
+            // 3. Resonant Wood Crackles & Micro-Bursts
+            // Trigger new cluster burst
+            if self.cluster_left == 0 && self.rng.next_f32() < 0.00012 {
+                self.cluster_left = self.rng.gen_range_u8(2, 6);
+                self.cluster_gap = 0;
+                self.cluster_pan = self.rng.gen_range_f32(-0.6, 0.6);
             }
 
-            // Hissing micro-sparks
-            let spark = if self.rng.next_f32() < 0.005 {
-                self.rng.next_signed() * 0.15
+            // Trigger isolated micro-crackle
+            let isolated = self.rng.next_f32() < 0.0004;
+
+            if self.cluster_left > 0 {
+                if self.cluster_gap == 0 {
+                    let amp = self.rng.gen_range_f32(0.20, 0.55);
+                    let freq = self.rng.gen_range_f32(1100.0, 3000.0);
+                    let decay = self.rng.gen_range_f32(2.0, 6.0);
+                    self.voices[self.voice_idx].trigger(freq, decay, amp, 0.45);
+                    self.pans[self.voice_idx] = (self.cluster_pan + self.rng.gen_range_f32(-0.1, 0.1)).clamp(-0.85, 0.85);
+                    self.voice_idx = (self.voice_idx + 1) % 4;
+
+                    self.cluster_left -= 1;
+                    if self.cluster_left > 0 {
+                        self.cluster_gap = self.rng.gen_range_u16(250, 1100);
+                    }
+                } else {
+                    self.cluster_gap -= 1;
+                }
+            }
+
+            if isolated {
+                let amp = self.rng.gen_range_f32(0.06, 0.28);
+                let freq = self.rng.gen_range_f32(1400.0, 3800.0);
+                let decay = self.rng.gen_range_f32(1.2, 4.0);
+                self.voices[self.voice_idx].trigger(freq, decay, amp, 0.55);
+                self.pans[self.voice_idx] = self.rng.gen_range_f32(-0.75, 0.75);
+                self.voice_idx = (self.voice_idx + 1) % 4;
+            }
+
+            // 4. Wood Pops (Trapped gas/resin explosion)
+            if self.samples_to_pop == 0 {
+                let u = self.rng.next_f32().max(1e-6);
+                self.samples_to_pop = (-u.ln() * 3.5 * SAMPLE_RATE as f32) as u32;
+
+                // Deep hollow log thud (130-210 Hz, 35-55 ms)
+                let thump_freq = self.rng.gen_range_f32(130.0, 210.0);
+                let thump_decay = self.rng.gen_range_f32(35.0, 55.0);
+                let thump_amp = self.rng.gen_range_f32(0.35, 0.60);
+                self.thump.trigger(thump_freq, thump_decay, thump_amp, 0.1);
+                self.thump_pan = self.rng.gen_range_f32(-0.45, 0.45);
+
+                // Simultaneous sharp acoustic fracture crack
+                let crack_freq = self.rng.gen_range_f32(900.0, 1800.0);
+                self.voices[self.voice_idx].trigger(crack_freq, 8.0, thump_amp * 0.7, 0.5);
+                self.pans[self.voice_idx] = self.thump_pan;
+                self.voice_idx = (self.voice_idx + 1) % 4;
+
+                self.ember_tail = (SAMPLE_RATE as f32 * self.rng.gen_range_f32(0.06, 0.16)) as u32;
             } else {
-                0.0
-            };
+                self.samples_to_pop -= 1;
+            }
 
-            let out = rumble + pop + spark;
-            self.current_sample = out.clamp(-1.0, 1.0);
+            // Trailing spark flurry after pop
+            if self.ember_tail > 0 {
+                self.ember_tail -= 1;
+                if self.rng.next_f32() < 0.04 {
+                    let amp = self.rng.gen_range_f32(0.04, 0.15);
+                    let freq = self.rng.gen_range_f32(2200.0, 4500.0);
+                    let decay = self.rng.gen_range_f32(1.0, 2.5);
+                    self.voices[self.voice_idx].trigger(freq, decay, amp, 0.7);
+                    self.pans[self.voice_idx] = (self.thump_pan + self.rng.gen_range_f32(-0.25, 0.25)).clamp(-0.85, 0.85);
+                    self.voice_idx = (self.voice_idx + 1) % 4;
+                }
+            }
+
+            // Sum crackle voices
+            let mut crackle_l = 0.0;
+            let mut crackle_r = 0.0;
+            for v in 0..4 {
+                let val = self.voices[v].tick(&mut self.rng);
+                let pan = self.pans[v];
+                crackle_l += val * (0.5 - 0.5 * pan);
+                crackle_r += val * (0.5 + 0.5 * pan);
+            }
+
+            let thump_val = self.thump.tick(&mut self.rng);
+            let thump_l = thump_val * (0.5 - 0.5 * self.thump_pan);
+            let thump_r = thump_val * (0.5 + 0.5 * self.thump_pan);
+
+            let out_l = flame_l + sizzle + crackle_l * 0.70 + thump_l * 0.80;
+            let out_r = flame_r + sizzle + crackle_r * 0.70 + thump_r * 0.80;
+
+            // Soft analog saturation
+            self.current_left = (out_l * 0.95).tanh();
+            self.current_right = (out_r * 0.95).tanh();
+
+            Some(self.current_left)
+        } else {
+            Some(self.current_right)
         }
-
-        Some(self.current_sample)
     }
 }
 
@@ -716,5 +939,27 @@ mod tests {
             assert!(ocean.next().unwrap().abs() <= 1.0);
             assert!(bell.next().unwrap().abs() <= 1.5);
         }
+    }
+
+    #[test]
+    fn test_fireplace_source() {
+        let mut fire = FireplaceSource::new(42);
+        let mut non_zero_samples = 0;
+        let mut min_val = 1.0f32;
+        let mut max_val = -1.0f32;
+
+        for _ in 0..20_000 {
+            let s = fire.next().unwrap();
+            assert!(s.abs() <= 1.0, "Sample out of bounds: {}", s);
+            assert!(!s.is_nan(), "Sample is NaN");
+            if s < min_val { min_val = s; }
+            if s > max_val { max_val = s; }
+            if s.abs() > 0.005 {
+                non_zero_samples += 1;
+            }
+        }
+
+        assert!(non_zero_samples > 2_000, "Fireplace produced too few non-zero samples");
+        assert!(min_val < -0.01 && max_val > 0.01, "Fireplace has insufficient dynamic range");
     }
 }
